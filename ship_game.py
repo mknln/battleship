@@ -31,32 +31,47 @@ class Ship:
     self.length = length
     self.orientation = orientation
     self.name = name
+    self.y = -1
+    self.x = -1
+    self.points = {}
 
-class ShipList:
-  def __init__(self):
-    self.ships = []
+  def update_points(self):
+    self.points = {}
+    x = self.x
+    y = self.y
+    for i in xrange(self.length):
+      self.points[(y,x)] = 1
+      if self.orientation == Ship.ORIENTATION_VERTICAL:
+        y += 1
+      else:
+        x += 1
 
-  def add_ship(self, ship, y, x):
-    self.ships.append((ship, y, x))
+  def set_location(self, y, x):
+    self.y = y
+    self.x = x
+    self.update_points()
+
+  def get_points(self):
+    return self.points.keys()
+
+  def has_point(self, y, x):
+    return (y, x) in self.points
 
   def as_json(self):
     """
-    This is in fact not JSON, but a list that is ready to be converted to JSON
+    This is in fact not JSON, but a dict that is ready to be converted to JSON
     with jsonify().
     """
-    result = []
-    for ship, y, x in self.ships:
-      d = {}
-      d['name'] = ship.name
-      d['length'] = ship.length
-      if ship.orientation == Ship.ORIENTATION_VERTICAL:
-        d['orientation'] = "vertical"
-      else:
-        d['orientation'] = "horizontal"
-      d['y'] = y
-      d['x'] = x
-      result.append(d)
-    return result
+    d = {}
+    d['name'] = self.name
+    d['length'] = self.length
+    if self.orientation == Ship.ORIENTATION_VERTICAL:
+      d['orientation'] = "vertical"
+    else:
+      d['orientation'] = "horizontal"
+    d['y'] = self.y
+    d['x'] = self.x
+    return d
 
 def place_ships_randomly(board):
   """
@@ -88,7 +103,8 @@ class GameBoard(object):
     self.COLS=16
     self.board = []
     self.init_board()
-    self.ships = ShipList()
+    self.ships = []
+    self.ship_sunk = None
     # for now, we will place ships for the user
     place_ships_randomly(self)
 
@@ -127,7 +143,8 @@ class GameBoard(object):
     # now place the ship
     for y, x in steps:
       self.board[y][x] = 'o'
-    self.ships.add_ship(ship, y, x)
+    ship.set_location(steps[0][0], steps[0][1])
+    self.ships.append(ship)
     return True
 
 
@@ -141,6 +158,8 @@ class GameBoard(object):
     """
     Fire a shot onto this board. Returns HIT, MISS, or INVALID
     """
+    self.ship_sunk = None
+
     if self.out_of_bounds(y, x):
       return "INVALID"
 
@@ -152,7 +171,20 @@ class GameBoard(object):
       return "MISS"
 
     self.board[y][x] = 'X'
-    return "HIT"
+    result = "HIT"
+    sunk = True
+    #check which ship was hit
+    for ship in self.ships:
+      if ship.has_point(y,x):
+        #check if sunk
+        for y,x in ship.get_points():
+          if self.board[y][x] != 'X':
+            sunk = False
+            break
+        if sunk:
+          self.ship_sunk = ship
+        break
+    return result
 
   def is_game_over(self):
     for row in self.board:
