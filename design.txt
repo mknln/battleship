@@ -1,0 +1,5 @@
+
+ * It would definitely be an improvement to store the serialized game board objects in memory rather than on the filesystem.
+ * I would use an ORM for things like the game and game_state tables.
+ * IP might not be a good way to identify the user. Many people can have the same IP due to NAT, etc.
+
