@@ -92,7 +92,7 @@ def create():
   db.commit()
   cur.close()
   response = {'success': 1, 'game_id': game_id, 'player_id': 1}
-  response['ships'] = board1.ships.as_json()
+  response['ships'] = [ship.as_json() for ship in board1.ships]
   return json_response(response, 200)
 
 @app.route("/api/game/list")
@@ -195,7 +195,7 @@ def join(id):
 
   response = {'success': 1, 'game_id': id, 'player_id': player_id}
   board = BoardSerializer.load(id, player_id)
-  response['ships'] = board.ships.as_json()
+  response['ships'] = [ship.as_json() for ship in board.ships]
   return json_response(response, 200)
 
 @app.route("/api/game/<int:id>/disconnect")
@@ -261,6 +261,12 @@ def clickHandler(id, y, x):
   BoardSerializer(board).store(id, other_player(session['player_id']))
 
   other = other_player(session['player_id'])
+  if board.ship_sunk:
+    print "You sunk", board.ship_sunk.name
+    event = ShipSunkEvent(board.ship_sunk, other)
+    add_to_feed(make_key(session['game_id'], other), event)
+    add_to_feed(make_key(session['game_id'], session['player_id']), event)
+
   if board.is_game_over():
     query = "UPDATE games SET ended=1 WHERE id=%s"
     cur.execute(query, [id])
@@ -340,6 +346,19 @@ class TurnChangedEvent(FeedEvent):
   def as_json(self):
     d = FeedEvent.as_json(self)
     d['player_id'] = self.player_id
+    return d
+
+class ShipSunkEvent(FeedEvent):
+  def __init__(self, ship, player_id):
+    FeedEvent.__init__(self, "ShipSunkEvent")
+    self.ship = ship
+    # player whose ship was sunk
+    self.player_id = player_id
+
+  def as_json(self):
+    d = FeedEvent.as_json(self)
+    d['player_id'] = player_id
+    d['ship'] = self.ship.as_json()
     return d
 
 def make_key(game_id, player_id):
