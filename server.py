@@ -291,8 +291,8 @@ def placeShip(id, x, y):
 
 
 class FeedEvent:
-  def __init__(self):
-    self.name = "unknown"
+  def __init__(self, name="unknown event"):
+    self.name = name
 
   def as_json(self):
     d = {'name': self.name}
