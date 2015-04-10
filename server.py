@@ -2,6 +2,11 @@ from flask import Flask, request, session, url_for, redirect, \
     g, flash, _app_ctx_stack, json, jsonify, make_response
 from flaskext.mysql import MySQL
 from ship_game import GameBoard, BoardSerializer
+from redis import Redis
+try:
+  import cPickle as pickle
+except:
+  import pickle
 
 app = Flask(__name__)
 app.config.from_object(__name__)
@@ -10,6 +15,8 @@ app.config.from_envvar('BATTLESHIP_CONFIG')
 mysql = MySQL()
 mysql.init_app(app)
 # now call mysql.get_db()
+
+redis = Redis()
 
 def json_response(response_dict, status_code):
   return make_response(jsonify(response_dict), status_code)
@@ -258,9 +265,14 @@ def clickHandler(id, y, x):
     error = "Invalid move"
     return json_response({'success': 0, 'error': error}, 400)
 
+  other = other_player(session['player_id'])
+  if result == "HIT" or result == "MISS":
+    event = ShotFiredEvent(y, x, result, other)
+    add_to_feed(make_key(session['game_id'], other), event)
+    add_to_feed(make_key(session['game_id'], session['player_id']), event)
+
   BoardSerializer(board).store(id, other_player(session['player_id']))
 
-  other = other_player(session['player_id'])
   if board.ship_sunk:
     print "You sunk", board.ship_sunk.name
     event = ShipSunkEvent(board.ship_sunk, other)
@@ -325,14 +337,17 @@ class GameEndedEvent(FeedEvent):
     return d
 
 class ShotFiredEvent(FeedEvent):
-  def __init__(self, y, x, result):
+  def __init__(self, y, x, result, player_id):
     FeedEvent.__init__(self, "ShotFiredEvent")
+    #player whose board was fired at
+    self.player_id = player_id
     self.y = y
     self.x = x
     self.result = result
 
   def as_json(self):
     d = FeedEvent.as_json(self)
+    d['attacked_player'] = self.player_id
     d['y'] = self.y
     d['x'] = self.x
     d['result'] = self.result
@@ -365,7 +380,7 @@ def make_key(game_id, player_id):
   return "%s-%s" % (game_id, player_id)
 
 def add_to_feed(key, event):
-  pass
+  redis.rpush(key, pickle.dumps(event))
 
 @app.route("/api/game/<int:id>/feed")
 def feed(id):
@@ -378,10 +393,21 @@ def feed(id):
       Should include enemy's full board so location of ships can be revealed
     TurnChanged
   """
-  # aggregate EventItem objects into one big json dump
+  if not 'game_id' in session or session['game_id'] != id:
+    error = "You are not a member of this game"
+    return json_response({'success': 0, 'error': error}, 401)
+
+  key = make_key(id, session['player_id'])
+  # aggregate FeedEvent objects into one big json dump
   events = []
+  while True:
+    event = redis.lpop(key)
+    if event is None:
+      break
+    event = pickle.loads(event)
+    events.append(event.as_json())
   response = {'events': events}
-  return "Not Implemented"
+  return json_response(response, 200)
 
 
 if __name__ == '__main__':
