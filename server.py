@@ -265,9 +265,14 @@ def clickHandler(id, y, x):
     error = "Invalid move"
     return json_response({'success': 0, 'error': error}, 400)
 
+  other = other_player(session['player_id'])
+  if result == "HIT" or result == "MISS":
+    event = ShotFiredEvent(y, x, result, other)
+    add_to_feed(make_key(session['game_id'], other), event)
+    add_to_feed(make_key(session['game_id'], session['player_id']), event)
+
   BoardSerializer(board).store(id, other_player(session['player_id']))
 
-  other = other_player(session['player_id'])
   if board.ship_sunk:
     print "You sunk", board.ship_sunk.name
     event = ShipSunkEvent(board.ship_sunk, other)
@@ -332,14 +337,17 @@ class GameEndedEvent(FeedEvent):
     return d
 
 class ShotFiredEvent(FeedEvent):
-  def __init__(self, y, x, result):
+  def __init__(self, y, x, result, player_id):
     FeedEvent.__init__(self, "ShotFiredEvent")
+    #player whose board was fired at
+    self.player_id = player_id
     self.y = y
     self.x = x
     self.result = result
 
   def as_json(self):
     d = FeedEvent.as_json(self)
+    d['attacked_player'] = self.player_id
     d['y'] = self.y
     d['x'] = self.x
     d['result'] = self.result
